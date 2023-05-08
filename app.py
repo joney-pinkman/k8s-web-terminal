@@ -26,6 +26,9 @@ def index():
 def terminal():
     return render_template('terminal.html')
 
+@app.route('/terminal/new_window', methods=['GET'])
+def new_terminal():
+    return render_template('new_terminal.html')
 
 @sockets.route('/terminal/<namespace>/<pod>/<container>')
 def terminal_socket(ws, namespace, pod, container):
@@ -68,7 +71,7 @@ def run_server():
     from gevent import pywsgi
     from geventwebsocket.handler import WebSocketHandler
     server = pywsgi.WSGIServer(
-        listener = ('0.0.0.0', 5000),
+        listener = ('0.0.0.0', 8100),
         application=app,
         handler_class=WebSocketHandler)
     server.serve_forever()

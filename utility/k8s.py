@@ -6,11 +6,13 @@
 :date 2018/10/15 
 
 """
+import json
 import os
 import threading
 from utility.log import log
-from kubernetes import client
+from kubernetes import client, config
 from kubernetes.stream import stream
+from kubernetes.stream.ws_client import RESIZE_CHANNEL
 
 # from kubernetes.client import *
 # from kubernetes.client.rest import ApiException
@@ -19,13 +21,14 @@ from kubernetes.stream import stream
 class KubernetesAPI(object):
 
     def __init__(self, api_host, ssl_ca_cert, key_file, cert_file):
-        kub_conf = client.Configuration()
-        kub_conf.host = api_host
-        kub_conf.ssl_ca_cert = ssl_ca_cert
-        kub_conf.cert_file = cert_file
-        kub_conf.key_file = key_file
+        config.load_kube_config()
+        # kub_conf = client.Configuration()
+        # kub_conf.host = api_host
+        # kub_conf.ssl_ca_cert = ssl_ca_cert
+        # kub_conf.cert_file = cert_file
+        # kub_conf.key_file = key_file
 
-        self.api_client = client.ApiClient(configuration=kub_conf)
+        self.api_client = client.ApiClient()
         self.client_core_v1 = client.CoreV1Api(api_client=self.api_client)
         self.client_apps_v1 = client.AppsV1Api(api_client=self.api_client)
         self.client_extensions_v1 = client.ExtensionsV1beta1Api(
@@ -81,6 +84,7 @@ class K8SClient(KubernetesAPI):
             stdout=True, tty=True,
             _preload_content=False
         )
+        # container_stream.write_channel(RESIZE_CHANNEL, json.dumps({"Height": int(rows), "Width": int(cols)}))
 
         return container_stream
 
@@ -93,13 +97,9 @@ class K8SStreamThread(threading.Thread):
         self.stream = container_stream
 
     def run(self):
-        while not self.ws.closed:
-
-            if not self.stream.is_open():
-                log.info('container stream closed')
-                self.ws.close()
-
+        while self.stream.is_open():
             try:
+                self.stream.update(timeout=1)
                 if self.stream.peek_stdout():
                     stdout = self.stream.read_stdout()
                     self.ws.send(stdout)
@@ -109,5 +109,18 @@ class K8SStreamThread(threading.Thread):
                     self.ws.send(stderr)
             except Exception as err:
                 log.error('container stream err: {}'.format(err))
-                self.ws.close()
-                break
+                pass
+        else:
+            self._disconnect()
+    
+    def _disconnect(self):
+        try:
+            log.info('container stream closed')
+            if self.stream.is_open():
+                self.stream.write_stdin('\u0003')
+                self.stream.write_stdin('\u0004')
+                self.stream.write_stdin('exit\r')
+
+            self.ws.close()
+        except:
+            pass
