@@ -14,6 +14,8 @@ from kubernetes import client, config
 from kubernetes.stream import stream
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
 
+
+
 # from kubernetes.client import *
 # from kubernetes.client.rest import ApiException
 
@@ -97,18 +99,17 @@ class K8SStreamThread(threading.Thread):
         self.stream = container_stream
 
     def run(self):
-        while self.stream.is_open():
+        while self.stream.is_open() and (not self.ws.closed):
             try:
-                self.stream.update(timeout=1)
                 if self.stream.peek_stdout():
                     stdout = self.stream.read_stdout()
-                    self.ws.send(stdout)
+                    self.ws.send(stdout, binary=True)
 
                 if self.stream.peek_stderr():
                     stderr = self.stream.read_stderr()
-                    self.ws.send(stderr)
+                    self.ws.send(stderr, binary=True)
             except Exception as err:
-                log.error('container stream err: {}'.format(err))
+                log.error('container stream err: %s', err, exc_info=1)
                 pass
         else:
             self._disconnect()
@@ -120,7 +121,8 @@ class K8SStreamThread(threading.Thread):
                 self.stream.write_stdin('\u0003')
                 self.stream.write_stdin('\u0004')
                 self.stream.write_stdin('exit\r')
-
+                self.stream.close()
+            self.ws.send('closed. Thank you for use!')
             self.ws.close()
         except:
             pass

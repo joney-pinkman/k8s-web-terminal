@@ -61,8 +61,27 @@ https://cdn.jsdelivr.net/npm/xterm-addon-attach@0.8.0/lib/xterm-addon-attach.min
     terminal.open(terminalContainer);
  
     fitAddon.fit()
-    socket.onclose = function () {
-        term.writeln("closed. Thank you for use!");
+    websocket.onclose = function () {
+        terminal.writeln("closed. Thank you for use!");
+    }
+    console.log(terminal.rows, terminal.cols)
+
+    const debouncedFit = () => {
+      fitAddon.fit()
+    }
+    
+    
+    window.addEventListener('resize', debouncedFit)
+    websocket.onopen = () => {
+      terminal.onResize(() => {
+        console.log('resize terminal')
+        websocket.send(`__resize__${JSON.stringify({
+          cols: terminal.cols,
+          rows: terminal.rows
+        })}`)
+        // console.log('resize', terminal.rows, terminal.cols)
+      })
+      debouncedFit()
     }
   </script>
 </body>

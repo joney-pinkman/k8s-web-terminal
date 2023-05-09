@@ -11,6 +11,9 @@ from flask_sockets import Sockets
 from flask import Flask, render_template
 from utility.log import log
 from utility.k8s import K8SClient, K8SStreamThread
+from kubernetes.stream.ws_client import RESIZE_CHANNEL
+
+import json
 
 app = Flask(__name__, static_folder='static',
             static_url_path='/terminal/static')
@@ -30,6 +33,8 @@ def terminal():
 def new_terminal():
     return render_template('new_terminal.html')
 
+
+RESIZE_KEYWORD = '__resize__'
 @sockets.route('/terminal/<namespace>/<pod>/<container>')
 def terminal_socket(ws, namespace, pod, container):
     log.info('Try create socket connection')
@@ -52,17 +57,26 @@ def terminal_socket(ws, namespace, pod, container):
 
     log.info('Start terminal')
     try:
-        while not ws.closed:
+        while (not ws.closed) and container_stream.is_open():
             message = ws.receive()
             if message is not None:
-                if message != '__ping__':
+                if message.startswith(RESIZE_KEYWORD):
+                    info = message[len(RESIZE_KEYWORD):]
+                    try:
+                        information = json.loads(info)
+                        cols = information['cols']
+                        rows = information['rows']
+                        log.info('resize cols[%s] rows[%s]' % (cols, rows))
+                        container_stream.write_channel(RESIZE_CHANNEL, json.dumps({"Height": rows, "Width": cols}))
+
+                    except:
+                        pass
+                elif message != '__ping__':
                     container_stream.write_stdin(message)
-        container_stream.write_stdin('exit\r')
     except Exception as err:
         log.error('Connect container error: {}'.format(err))
     finally:
-        container_stream.close()
-        ws.close()
+        kub_stream._disconnect()
 
 
 @serving.run_with_reloader
